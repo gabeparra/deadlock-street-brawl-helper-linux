@@ -84,7 +84,6 @@ async function main() {
   const idx = decodeIconIndex(JSON.parse(readFileSync('public/data/brawl-icons.json', 'utf8')));
   const names = Object.fromEntries(items.map((i) => [i.id, i.name]));
   const list = nameList(idx.ids, names);
-  const byName = new Map(items.map((i) => [i.name, i.id]));
 
   const t0 = performance.now();
   const all = await loadNameSamples({ videoStep: quick ? 8 : 2 });
@@ -136,9 +135,10 @@ async function main() {
   for (const r of rows) {
     // what the worker takes from this crop: nothing when covered or duplicate, else the resolved item
     const taken = !r.covered && !r.duplicate && r.resolvedId ? r.resolvedId : 0;
-    const truthId = r.truth ? (byName.get(r.truth) ?? null) : null;
+    // by name, not id: two items can share one name (Silencer: upgrade_proc_silence and upgrade_silencer), and the
+    // name is all a read can tell apart
     r.outcome =
-      r.covered || r.duplicate ? 'covered' : !taken ? 'unsure' : truthId && taken === truthId ? 'sure' : 'wrong';
+      r.covered || r.duplicate ? 'covered' : !taken ? 'unsure' : r.truth && names[taken] === r.truth ? 'sure' : 'wrong';
     // a hand-labelled tooltip slot whose real item is unknown counts as wrong if anything is taken from it
   }
   // warm: 20 reads of the same crop, over 10 crops (live engines only; recorded answers carry the helper's own ms)

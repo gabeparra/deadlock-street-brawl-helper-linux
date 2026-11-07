@@ -12,7 +12,7 @@ import {
 } from '../../src/brawl/ocr';
 import { decodeIconIndex, loadingNameRect, type RGBImage } from '../../src/brawl/recognise';
 import { cropsOf, DEMO_FRAMES, iconIds, itemName, loadFrame, LIVE_FRAMES } from '../lib/nameFrames';
-import { installTextReader, nodeRead, readerMode, recordedRead, stopLiveReader } from '../lib/textReader';
+import { installTextReader, liveEngine, nodeRead, readerMode, recordedRead, stopLiveReader } from '../lib/textReader';
 import type { Hero, Item } from '../../src/types';
 
 // Pins the name reader's raw text and the item/hero/count it resolves to on every fixed crop the app reads: the card name
@@ -32,11 +32,16 @@ const NO_REC =
   'no recorded answer for this crop in scripts/fixtures/ocr-recorded/: run with BRAWL_OCR=record on Windows/WSL';
 
 /** The recorded answer and, in live mode, the helper's fresh one: they must agree. */
+/** Reads come from Windows OCR (its recordings, or the live helper on Windows/WSL) rather than another live engine. */
+const winocrText = () => readerMode() !== 'live' || liveEngine() === 'winocr';
+
 async function pinned(img: TextImage, kind: TextKind, skip: (note: string) => void): Promise<string> {
   const rec = recordedRead(img, kind);
   if (!rec && readerMode() !== 'record') skip(NO_REC);
   const now = (await nodeRead(img, kind)).text;
-  if (rec) expect(now, 'live read differs from the recording').toBe(rec.text);
+  // The recordings are Windows OCR's raw text; another engine (tesseract.js on Linux) spells some lines differently and is
+  // judged on what the text resolves to (the assertions after this), not on the raw string.
+  if (rec && winocrText()) expect(now, 'live read differs from the recording').toBe(rec.text);
   return now;
 }
 
@@ -143,7 +148,10 @@ describe('re-roll caption', () => {
       .toBuffer({ resolveWithObject: true });
     const img: RGBImage = { width: w, height: Math.round((w * 9) / 16), data, channels: 3 };
     const p = prepareCaption(img)!;
-    expect(await pinned(p, 'caption', (n) => ctx.skip(n))).toBe('');
+    const raw = await pinned(p, 'caption', (n) => ctx.skip(n));
+    if (winocrText()) expect(raw).toBe('');
+    // another engine may read letters here ("I Re", "ORe"); what must never happen is a wrong digit the parser believes
+    else expect(raw.trim().match(/^([01])(?![0-9])/)?.[1] ?? String(want)).toBe(String(want));
     expect(await readRerollsRemaining(img)).toBe(want);
   });
 });

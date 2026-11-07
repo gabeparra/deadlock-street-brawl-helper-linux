@@ -15,7 +15,7 @@ import { execFileSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTextReader, ReaderDownError, type TextImage, type TextKind, type TextRead } from '../../src/brawl/ocr';
-import { startNameReader, type NameReader } from '../../electron/nameReader';
+import { startNameReader, type NameReader, type NameReaderOpts } from '../../electron/nameReader';
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const RECORDED_DIR = resolve(here, '../fixtures/ocr-recorded');
@@ -80,9 +80,21 @@ function helperPath(): string {
   return execFileSync('wslpath', ['-w', dest], { encoding: 'utf8' }).trim();
 }
 
+/** Native Linux (not WSL, which reaches Windows OCR through powershell.exe): the app's Linux reader, tesseract.js in
+ *  electron/linux/tess-helper.cjs, run with this Node. */
+const LINUX_HELPER = resolve(here, '../../electron/linux/tess-helper.cjs');
+const nativeLinux = () => process.platform === 'linux' && !process.env.WSL_DISTRO_NAME;
+/** The engine behind live reads: recordings are Windows OCR's answers, so a raw-text pin only holds for 'winocr'. */
+export const liveEngine = (): 'winocr' | 'tesseract' => (nativeLinux() ? 'tesseract' : 'winocr');
+function helperOpts(): NameReaderOpts {
+  return nativeLinux()
+    ? { script: LINUX_HELPER, command: process.execPath, args: [LINUX_HELPER] }
+    : { script: helperPath() };
+}
+
 function liveReader(): Promise<NameReader> {
   if (!live) {
-    live = startNameReader({ script: helperPath(), timeoutMs: 20000, startTimeoutMs: 30000 });
+    live = startNameReader({ ...helperOpts(), timeoutMs: 20000, startTimeoutMs: 30000 });
     const r = live;
     liveReady = new Promise((res, rej) => {
       if (r.state() === 'ready') return res();
@@ -95,9 +107,9 @@ function liveReader(): Promise<NameReader> {
 
 /** A fresh helper's start to ready (its engine up and one warm-up read answered), in ms. */
 export async function measureColdStart(): Promise<number> {
-  const script = helperPath();
+  const opts = helperOpts();
   const t = performance.now();
-  const r = startNameReader({ script, startTimeoutMs: 30000 });
+  const r = startNameReader({ ...opts, startTimeoutMs: 30000 });
   try {
     await new Promise<void>((res, rej) =>
       r.onState((s) => (s === 'ready' ? res() : s === 'failed' ? rej(new ReaderDownError('cold start failed')) : 0)),
@@ -130,6 +142,11 @@ export const ocrChargedMs = () => charged;
 export async function nodeRead(img: TextImage, kind: TextKind, mode = readerMode()): Promise<TextRead> {
   const r = await nodeReadRaw(img, kind, mode);
   charged += r.ms;
+  // BRAWL_OCR_TRACE=1: every read next to the recorded Windows OCR answer for the same crop, to compare engines
+  if (process.env.BRAWL_OCR_TRACE)
+    console.log(
+      JSON.stringify({ ocr: kind, w: img.width, h: img.height, text: r.text, winocr: recordedRead(img, kind)?.text }),
+    );
   return r;
 }
 

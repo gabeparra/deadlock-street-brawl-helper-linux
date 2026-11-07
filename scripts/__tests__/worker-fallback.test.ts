@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { CARD_NAME, cardNameCrop, cardSquares, coveredSlots, draftRegions } from '../../src/brawl/recognise';
 import type { WorkerIn, WorkerOut } from '../../src/brawl/worker';
 import type { Item } from '../../src/types';
+import { liveEngine, readerMode } from '../lib/textReader';
 
 // The real worker on real demo frames: what it reports from the first sight of a draft, and what it does when one card
 // cannot be read. Virtual clock, 70 ms per frame.
@@ -135,9 +136,13 @@ describe('worker: a set stays unchanged once shown', () => {
   });
 });
 
+// These two frames blank or shift only part of a name line, which Windows OCR cannot read. Live tesseract.js (Linux)
+// reads the rest correctly (choice1's Extended Magazine), so the 1 s fallback is never reached; reader-down.test.ts
+// covers the fallback itself for every engine.
+const tesseractLive = readerMode() === 'live' && liveEngine() === 'tesseract';
 describe('worker: the 1 s fallback', () => {
   beforeAll(() => send({ type: 'reset' }));
-  it('turns one unreadable card into a question mark and keeps the others', async () => {
+  it.skipIf(tesseractLive)('turns one unreadable card into a question mark and keeps the others', async () => {
     const outs = await run('bad', 30); // 2.1 s
     const acc = outs.filter((o) => o.accepted);
     expect(acc.length).toBe(1);
@@ -159,24 +164,27 @@ describe('worker: the 1 s fallback', () => {
     expect(back.indexOf(up) * 70).toBeLessThan(300);
   });
 
-  it('shows a covered name line as ? at 1 s and upgrades it when the tooltip moves away', async () => {
-    send({ type: 'reset' });
-    const img = { width: W, height: H, data: frames.cov!, channels: 4 as const };
-    expect(
-      coveredSlots(cardSquares(W, H).map((q) => cardNameCrop(img, { ...q, itemId: 0, score: 0, margin: 0 }))),
-    ).toEqual([true, false, false]);
-    const outs = await run('cov', 25);
-    const first = outs.find((o) => o.accepted)!;
-    expect(first.covered).toEqual([0]);
-    const at = outs.indexOf(first) * 70;
-    expect(at).toBeGreaterThanOrEqual(1000);
-    expect(at).toBeLessThan(1000 + 200 + 2 * 70);
-    expect(first.reads.map((r) => !!r.unsure)).toEqual([true, false, false]);
-    const back = await run('c1', 6);
-    const up = back.find((o) => o.accepted)!;
-    expect(up.reads.every((r) => r.present && !r.unsure)).toBe(true);
-    expect(back.indexOf(up) * 70).toBeLessThan(300);
-  });
+  it.skipIf(tesseractLive)(
+    'shows a covered name line as ? at 1 s and upgrades it when the tooltip moves away',
+    async () => {
+      send({ type: 'reset' });
+      const img = { width: W, height: H, data: frames.cov!, channels: 4 as const };
+      expect(
+        coveredSlots(cardSquares(W, H).map((q) => cardNameCrop(img, { ...q, itemId: 0, score: 0, margin: 0 }))),
+      ).toEqual([true, false, false]);
+      const outs = await run('cov', 25);
+      const first = outs.find((o) => o.accepted)!;
+      expect(first.covered).toEqual([0]);
+      const at = outs.indexOf(first) * 70;
+      expect(at).toBeGreaterThanOrEqual(1000);
+      expect(at).toBeLessThan(1000 + 200 + 2 * 70);
+      expect(first.reads.map((r) => !!r.unsure)).toEqual([true, false, false]);
+      const back = await run('c1', 6);
+      const up = back.find((o) => o.accepted)!;
+      expect(up.reads.every((r) => r.present && !r.unsure)).toBe(true);
+      expect(back.indexOf(up) * 70).toBeLessThan(300);
+    },
+  );
 });
 
 describe('worker: cards still sliding in', () => {

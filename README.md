@@ -40,8 +40,8 @@ never touches game files or game memory.
 Run it from source (Node 20 or newer):
 
 ```bash
-git clone -b linux https://github.com/gabeparra/deadlock-street-brawl-helper
-cd deadlock-street-brawl-helper
+git clone https://github.com/gabeparra/deadlock-street-brawl-helper-linux
+cd deadlock-street-brawl-helper-linux
 npm ci
 node node_modules/electron/install.js   # only needed if your npm has ignore-scripts on
 npm run build:electron
