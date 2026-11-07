@@ -35,9 +35,13 @@ This fork adds Linux support (tested on KDE Plasma 6 on Wayland, Deadlock throug
 as an XWayland window, so the app runs under XWayland too: it finds the game window over X11, reads it with X11 window
 capture, and reads card names with [tesseract.js](https://github.com/naptha/tesseract.js) instead of Windows OCR. The
 scoring and data are upstream's, unchanged. Like the Windows app, it only reads the screen and draws its own window. It
-never touches game files or game memory.
+never touches game files or game memory, and it makes no network requests.
 
-Run it from source (Node 20 or newer):
+**AppImage** (any x86_64 distro): download `deadlock-street-brawl-helper-<version>-x86_64.AppImage` from Releases,
+`chmod +x` it and run it. AppImages need FUSE 2 (`sudo apt install libfuse2t64` on Ubuntu 24.04 and newer,
+`sudo pacman -S fuse2` on Arch); without it, run it with `--appimage-extract-and-run`.
+
+**From source** (Node 20 or newer):
 
 ```bash
 git clone https://github.com/gabeparra/deadlock-street-brawl-helper-linux
@@ -45,20 +49,25 @@ cd deadlock-street-brawl-helper-linux
 npm ci
 node node_modules/electron/install.js   # only needed if your npm has ignore-scripts on
 npm run build:electron
-scripts/linux/kwin-rule.sh              # KDE only, see below
 scripts/linux/run.sh
 ```
 
-- **KDE:** a fullscreen game sits above "always on top" windows, so `scripts/linux/kwin-rule.sh` adds a KWin rule that
-  lifts only the overlay window (title `Brawl Overlay`) above it. `scripts/linux/kwin-rule.sh --remove` takes it out.
+`npm run dist` builds the AppImage into `release/`. `scripts/linux/e2e.sh` runs upstream's Electron test harness against
+test mode's dummy window.
+
+- **Desktops:** the overlay is an override-redirect X11 window, so it sits above the fullscreen game without any window
+  manager setup. If your setup needs it managed instead, start with `BRAWL_X11_MANAGED=1`; on KDE that also needs
+  `scripts/linux/kwin-rule.sh`, which lifts the overlay above fullscreen windows (`--remove` takes it out again).
+- The app always runs under XWayland. If it starts without `--ozone-platform=x11` (or with
+  `ELECTRON_OZONE_PLATFORM_HINT=wayland` set), it restarts itself once with it.
 - **Mouse leaves the game on a multi-monitor setup:** that's Proton, not this app. With the game closed, add this to
   `steamapps/compatdata/1422450/pfx/user.reg` to keep the cursor in the fullscreen game:
   ```
   [Software\\Wine\\X11 Driver]
   "GrabFullscreen"="Y"
   ```
-- Other desktops (GNOME, Hyprland, Sway) haven't been tested yet. A native Wayland game (`PROTON_ENABLE_WAYLAND=1`)
-  isn't supported, since the app can't see Wayland windows.
+- Tested on KDE Plasma 6. GNOME, Hyprland and Sway should work the same way (XWayland), but haven't been tried yet. A
+  native Wayland game (`PROTON_ENABLE_WAYLAND=1`) isn't supported, since the app can't see Wayland windows.
 
 ## Features 🔬
 

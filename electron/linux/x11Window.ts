@@ -28,6 +28,40 @@ const XImage = koffi.struct('BrawlXImage', {
   bytes_per_line: 'int',
   bits_per_pixel: 'int',
 });
+// XSetWindowAttributes (64-bit layout); only override_redirect is used (valuemask CWOverrideRedirect).
+const XSetWindowAttributes = koffi.struct('BrawlXSetWindowAttributes', {
+  background_pixmap: 'unsigned long',
+  background_pixel: 'unsigned long',
+  border_pixmap: 'unsigned long',
+  border_pixel: 'unsigned long',
+  bit_gravity: 'int',
+  win_gravity: 'int',
+  backing_store: 'int',
+  backing_planes: 'unsigned long',
+  backing_pixel: 'unsigned long',
+  save_under: 'int',
+  event_mask: 'long',
+  do_not_propagate_mask: 'long',
+  override_redirect: 'int',
+  colormap: 'unsigned long',
+  cursor: 'unsigned long',
+});
+const CWOverrideRedirect = 1n << 9n;
+// XClientMessageEvent with format 32 (5 longs of data), sent padded to sizeof(XEvent) = 192 bytes.
+const XClientMessageEvent = koffi.struct('BrawlXClientMessageEvent', {
+  type: 'int',
+  serial: 'unsigned long',
+  send_event: 'int',
+  display: 'void *',
+  window: 'unsigned long',
+  message_type: 'unsigned long',
+  format: 'int',
+  data: koffi.array('long', 5),
+  pad: koffi.array('long', 19),
+});
+const ClientMessage = 33;
+const SubstructureNotifyMask = 1n << 19n;
+const SubstructureRedirectMask = 1n << 20n;
 const ErrorHandler = koffi.proto('int BrawlXErrorHandler(void *dpy, void *ev)');
 
 function loadX11() {
@@ -49,7 +83,24 @@ function loadX11() {
       'BrawlXImage *XGetImage(void *dpy, unsigned long d, int x, int y, unsigned int w, unsigned int h, unsigned long planeMask, int format)',
     ),
     XFree: lib.func('int XFree(void *p)'),
+    XChangeWindowAttributes: lib.func('XChangeWindowAttributes', 'int', [
+      'void *',
+      'unsigned long',
+      'unsigned long',
+      koffi.pointer(XSetWindowAttributes),
+    ]),
+    XSendEvent: lib.func('XSendEvent', 'int', [
+      'void *',
+      'unsigned long',
+      'int',
+      'long',
+      koffi.pointer(XClientMessageEvent),
+    ]),
     XSync: lib.func('int XSync(void *dpy, int discard)'),
+    XMoveResizeWindow: lib.func(
+      'int XMoveResizeWindow(void *dpy, unsigned long w, int x, int y, unsigned int width, unsigned int height)',
+    ),
+    XDeleteProperty: lib.func('int XDeleteProperty(void *dpy, unsigned long w, unsigned long prop)'),
     XSetErrorHandler: lib.func('void *XSetErrorHandler(BrawlXErrorHandler *handler)'),
     // the same call, to put back whatever handler was there before (an opaque pointer we only hand back)
     XRestoreErrorHandler: lib.func('XSetErrorHandler', 'void *', ['void *']),
@@ -276,4 +327,62 @@ export function grabScreenRegionX11(sx: number, sy: number, width: number, heigh
       x!.XFree(img);
     }
   });
+}
+
+/** An X window id from `BrowserWindow#getNativeWindowHandle()` (4 bytes under ozone x11). */
+function xidOf(handle: Buffer): bigint {
+  return handle.length >= 8 ? handle.readBigUInt64LE() : BigInt(handle.readUInt32LE());
+}
+
+/** Makes one of our own, not yet shown, windows override-redirect: the window manager then neither manages nor places
+ *  it, and every WM (KWin, Mutter, Hyprland and Sway's XWayland, i3...) stacks it above managed windows, including an
+ *  active fullscreen game, which KWin otherwise keeps above "always on top" windows. It also never takes focus. Must
+ *  run before the window is first mapped: a WM only reads the flag when the window maps. */
+export function makeUnmanagedX11(handle: Buffer): boolean {
+  const xid = xidOf(handle);
+  return (
+    guarded(() => {
+      x!.XChangeWindowAttributes(dpy, xid, CWOverrideRedirect, { override_redirect: 1 });
+      return true;
+    }) ?? false
+  );
+}
+
+/** Asks the window manager to keep one of our own (shown) windows below all others (_NET_WM_STATE_BELOW): the
+ *  harness's dummy game window then never covers what the person is working in. Window capture still reads it. */
+export function sendWindowToBottomX11(handle: Buffer): boolean {
+  const xid = xidOf(handle);
+  return (
+    guarded(() => {
+      const data = [1, Number(atom('_NET_WM_STATE_BELOW')), 0, 1, 0]; // _NET_WM_STATE_ADD, source: application
+      const ev = {
+        type: ClientMessage,
+        send_event: 1,
+        window: xid,
+        message_type: atom('_NET_WM_STATE'),
+        format: 32,
+        data,
+      };
+      x!.XSendEvent(dpy, root, 0, SubstructureRedirectMask | SubstructureNotifyMask, ev);
+      return true;
+    }) ?? false
+  );
+}
+
+/** Resizes one of our own windows to exactly `width` x `height` px where it is. Chromium shrinks any X11 window whose
+ *  size equals a monitor's by 1 px each way (so old WMs don't take it for fullscreen) and pins non-resizable windows
+ *  there with min/max size hints, so test mode's 1920x1080 dummy comes out 1919x1079 next to a 1080p monitor. Drop the
+ *  hints and resize it directly, like the Win32 twin does with SetWindowPos. A move+resize, because KWin keeps a
+ *  resize-only request inside the work area (under a panel) but takes an explicit geometry as given. */
+export function resizeWindowPhysicalX11(handle: Buffer, width: number, height: number): boolean {
+  const xid = xidOf(handle);
+  return (
+    guarded(() => {
+      const at = rectOf(xid);
+      if (!at) return false;
+      x!.XDeleteProperty(dpy, xid, atom('WM_NORMAL_HINTS'));
+      x!.XMoveResizeWindow(dpy, xid, at.x, at.y, width, height);
+      return true;
+    }) ?? false
+  );
 }

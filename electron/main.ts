@@ -16,6 +16,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { writeFileSync, readdirSync, readFileSync } from 'node:fs';
+import { makeUnmanagedX11 } from './linux/x11Window';
 import {
   findGameWindow,
   gameWindowIsBorderless,
@@ -68,6 +69,17 @@ const GAME_WINDOW_TITLE = 'Deadlock'; // exact match only (electron/gameWindow.t
 // Dev only (the Vite dev server is running): timing/CPU summaries every 10 s. A packaged or built app has no dev
 // server, records nothing and starts no timer.
 const perf = createPerf(!!DEV_SERVER_URL, 'electron-main');
+// Linux: Deadlock under Proton is an XWayland window, so this app has to be an X11 client too (electron/linux/). A
+// launch without --ozone-platform=x11 (an AppImage started from a file manager, or ELECTRON_OZONE_PLATFORM_HINT=wayland
+// in the environment, common on Arch) restarts once with it. An AppImage restarts itself, not its temporary mount.
+if (process.platform === 'linux' && app.commandLine.getSwitchValue('ozone-platform') !== 'x11') {
+  delete process.env.ELECTRON_OZONE_PLATFORM_HINT;
+  app.relaunch({
+    execPath: process.env.APPIMAGE || process.execPath,
+    args: [...process.argv.slice(1), '--ozone-platform=x11'],
+  });
+  app.exit(0);
+}
 // The helper must never compete with the game for CPU: run below normal priority. Child processes (renderers, GPU)
 // inherit this class on Windows, so it is set before any of them start; applied to the existing ones again once up.
 if (!process.env.BRAWL_E2E) {
@@ -233,7 +245,7 @@ const readerState = (): ReaderState => nameReader?.state() ?? 'failed';
 // Linux: tesseract.js in a child running Electron's own Node, same line protocol (electron/linux/tess-helper.cjs).
 const linuxHelperScript = () =>
   app.isPackaged
-    ? path.join(process.resourcesPath, 'app.asar.unpacked', 'electron', 'linux', 'tess-helper.cjs')
+    ? path.join(app.getAppPath(), 'electron', 'linux', 'tess-helper.cjs') // linux builds are not asar-packed
     : path.join(__dirname, '../electron/linux/tess-helper.cjs');
 function startReader() {
   if (process.platform === 'linux') {
@@ -410,7 +422,8 @@ function overlayToGame() {
 const OVERLAY_TITLE = 'Brawl Overlay';
 function createOverlayWindow() {
   overlay = new BrowserWindow({
-    // Its own title, so a KWin rule can lift just this window above a fullscreen game (scripts/linux/kwin-rule.sh).
+    // Its own title, so a window manager rule can single it out (scripts/linux/kwin-rule.sh, only needed with
+    // BRAWL_X11_MANAGED=1, see below).
     title: OVERLAY_TITLE,
     frame: false,
     transparent: true,
@@ -428,6 +441,12 @@ function createOverlayWindow() {
   });
   logPreloadErrors(overlay);
   overlay.on('page-title-updated', (e) => e.preventDefault());
+  // Linux: unmanaged by the window manager, so it stacks above an active fullscreen game on any desktop and stays
+  // exactly where it is put. BRAWL_X11_MANAGED=1 keeps it a normal managed window (then KDE needs the KWin rule).
+  if (process.platform === 'linux' && !process.env.BRAWL_X11_MANAGED) {
+    const ok = makeUnmanagedX11(overlay.getNativeWindowHandle());
+    log('electron-main', ok ? 'info' : 'warn', 'overlay.unmanaged', { ok });
+  }
   // Click-through, with no forwarded mouse messages: Electron implements `forward` with a system-wide low-level mouse
   // hook (WH_MOUSE_LL) whose callback runs on this process's main thread, so every mouse move on the PC passes through
   // a below-normal-priority process while the overlay exists (0.6.0: suspected cause of the changed aim feel). The plate

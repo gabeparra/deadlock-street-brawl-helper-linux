@@ -6,6 +6,8 @@ import {
   gameWindowIsBorderlessX11,
   grabScreenRegionX11,
   isGameForegroundX11,
+  resizeWindowPhysicalX11,
+  sendWindowToBottomX11,
 } from './linux/x11Window';
 
 export interface Rect {
@@ -163,6 +165,7 @@ export function gameWindowIsBorderless(): boolean | null {
  *  would leave Test mode's dummy short of the ~1080p the recogniser needs and not 16:9. Windows itself lets a
  *  window be larger than the screen. */
 export function resizeWindowPhysical(handle: Buffer, width: number, height: number): boolean {
+  if (process.platform === 'linux') return resizeWindowPhysicalX11(handle, width, height);
   if (process.platform !== 'win32') return false;
   try {
     user32 ??= loadUser32(koffi);
@@ -180,6 +183,7 @@ export function resizeWindowPhysical(handle: Buffer, width: number, height: numb
  *  z-order without moving, resizing or activating it. Used by the e2e/demo harness so its dummy game window
  *  never covers what the person is working on (window capture still reads its pixels). */
 export function sendWindowToBottom(handle: Buffer): boolean {
+  if (process.platform === 'linux') return sendWindowToBottomX11(handle);
   if (process.platform !== 'win32') return false;
   try {
     user32 ??= loadUser32(koffi);

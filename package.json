@@ -93,6 +93,25 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "icon": "build/icon.png",
+      "category": "Game",
+      "asar": false,
+      "files": [
+        "dist/**",
+        "electron-dist/**",
+        "electron/linux/tess-helper.cjs",
+        "!node_modules/koffi/build/koffi/{darwin,freebsd,openbsd,win32,musl}_*/**",
+        "!node_modules/@tesseract.js-data/eng/4.0.0/**"
+      ],
+      "executableArgs": [
+        "--ozone-platform=x11"
+      ],
+      "artifactName": "deadlock-street-brawl-helper-${version}-${arch}.${ext}"
     }
   }
 }
