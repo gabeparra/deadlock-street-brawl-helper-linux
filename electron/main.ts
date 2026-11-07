@@ -21,6 +21,7 @@ import {
   gameWindowIsBorderless,
   grabScreenRegion,
   isGameForeground,
+  nativeHandleId,
   isGameWindowTitle,
   resizeWindowPhysical,
   sendWindowToBottom,
@@ -156,7 +157,10 @@ function clearBlack(why: string) {
 let lastEnv: Env | null = null;
 const NOTICE_MS = 5000;
 const DETECT_KEY = 'F8';
-const probeMode = () => process.platform === 'win32' && !process.env.BRAWL_E2E && !alive(testWindow);
+// Linux: the game is an XWayland window and this app runs under --ozone-platform=x11 (electron/linux/x11Window.ts),
+// so the same find / probe / capture / overlay path works there once an X display is present.
+const platformSupported = process.platform === 'win32' || (process.platform === 'linux' && !!process.env.DISPLAY);
+const probeMode = () => platformSupported && !process.env.BRAWL_E2E && !alive(testWindow);
 function captureState() {
   return { wanted: captureWanted, probe: probeMode() };
 }
@@ -226,7 +230,22 @@ const helperScript = () =>
     ? path.join(process.resourcesPath, 'winocr-helper.ps1')
     : path.join(__dirname, '../electron/winocr-helper.ps1');
 const readerState = (): ReaderState => nameReader?.state() ?? 'failed';
+// Linux: tesseract.js in a child running Electron's own Node, same line protocol (electron/linux/tess-helper.cjs).
+const linuxHelperScript = () =>
+  app.isPackaged
+    ? path.join(process.resourcesPath, 'app.asar.unpacked', 'electron', 'linux', 'tess-helper.cjs')
+    : path.join(__dirname, '../electron/linux/tess-helper.cjs');
 function startReader() {
+  if (process.platform === 'linux') {
+    nameReader = startNameReader({
+      script: linuxHelperScript(),
+      command: process.execPath,
+      args: [linuxHelperScript()],
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+    });
+    nameReader.onState((st) => sendControl(CHANNELS.readerState, st));
+    return;
+  }
   if (process.platform !== 'win32') {
     if (!readerFailedLogged) log('name-reader', 'error', 'reader.failed', { why: 'not-windows' });
     readerFailedLogged = true;
@@ -378,8 +397,11 @@ function overlayOnTop(move = false) {
   if (move) overlay.moveTop();
 }
 
+const OVERLAY_TITLE = 'Brawl Overlay';
 function createOverlayWindow() {
   overlay = new BrowserWindow({
+    // Its own title, so a KWin rule can lift just this window above a fullscreen game (scripts/linux/kwin-rule.sh).
+    title: OVERLAY_TITLE,
     frame: false,
     transparent: true,
     alwaysOnTop: !overlayNotTop,
@@ -395,6 +417,7 @@ function createOverlayWindow() {
     },
   });
   logPreloadErrors(overlay);
+  overlay.on('page-title-updated', (e) => e.preventDefault());
   // Click-through, with no forwarded mouse messages: Electron implements `forward` with a system-wide low-level mouse
   // hook (WH_MOUSE_LL) whose callback runs on this process's main thread, so every mouse move on the PC passes through
   // a below-normal-priority process while the overlay exists (0.6.0: suspected cause of the changed aim feel). The plate
@@ -503,7 +526,7 @@ function ownWindowHandles(includeTest = false): Set<bigint> {
   for (const w of BrowserWindow.getAllWindows()) {
     if (w === testWindow && !includeTest) continue; // the dummy game window must be findable as the game
     try {
-      handles.add(w.getNativeWindowHandle().readBigUInt64LE());
+      handles.add(nativeHandleId(w.getNativeWindowHandle()));
     } catch {
       /* not on win32, or window already destroyed */
     }
@@ -518,7 +541,7 @@ function findTarget(): Rect | null {
   if (alive(testWindow)) {
     let only: bigint;
     try {
-      only = testWindow.getNativeWindowHandle().readBigUInt64LE();
+      only = nativeHandleId(testWindow.getNativeWindowHandle());
     } catch {
       return null;
     }
@@ -1273,7 +1296,7 @@ function setupDisplayMediaHandler() {
  *  Linux Electron under WSLg instead, so warn loudly rather than let capture silently never find anything.
  *  `npm run win:dev` is what actually runs Windows Electron from WSL. */
 function platformWarning(): string | null {
-  if (process.platform === 'win32') return null;
+  if (platformSupported) return null;
   const msg = `platform.unsupported: process.platform=${process.platform}: run "npm run win:dev" from WSL (or "npm run dev:electron" from a Windows terminal in the synced Windows copy), not dev:electron inside WSL`;
   log('electron-main', 'warn', 'platform.unsupported', { platform: process.platform });
   return msg;

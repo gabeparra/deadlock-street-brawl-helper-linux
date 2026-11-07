@@ -1,6 +1,12 @@
 // Win32 window lookup for the Deadlock game window: rect tracking the browser sandbox can't do.
 // Uses koffi (prebuilt FFI, no node-gyp).
 import koffi from 'koffi';
+import {
+  findGameWindowX11,
+  gameWindowIsBorderlessX11,
+  grabScreenRegionX11,
+  isGameForegroundX11,
+} from './linux/x11Window';
 
 export interface Rect {
   x: number;
@@ -98,6 +104,7 @@ export function isGameWindowTitle(title: string, needle: string): boolean {
  *  accepts that one handle and nothing else: test mode passes its dummy's handle so a real game that is also open is
  *  never found, captured, probed or moved. */
 export function findGameWindow(title: string, exclude?: Set<bigint>, only?: bigint): Rect | null {
+  if (process.platform === 'linux') return findGameWindowX11(title, isGameWindowTitle, exclude, only);
   if (process.platform !== 'win32') return null; // dev/build only ever runs the real lookup on Windows
   try {
     user32 ??= loadUser32(koffi);
@@ -139,6 +146,7 @@ export function findGameWindow(title: string, exclude?: Set<bigint>, only?: bigi
  *  or the style cannot be read. A windowed game has a caption; borderless and exclusive fullscreen do not, so this alone
  *  cannot tell those two apart (the capture being black does, see main.ts). */
 export function gameWindowIsBorderless(): boolean | null {
+  if (process.platform === 'linux') return gameWindowIsBorderlessX11();
   if (process.platform !== 'win32' || !cached) return null;
   try {
     user32 ??= loadUser32(koffi);
@@ -221,6 +229,7 @@ let gdi32: ReturnType<typeof loadGdi32> | null = null;
 /** True while the game window found by `findGameWindow` is the foreground window. The draft probe only reads the
  *  screen then, so it never samples pixels belonging to some other window that happens to cover the game. */
 export function isGameForeground(): boolean {
+  if (process.platform === 'linux') return isGameForegroundX11();
   if (process.platform !== 'win32' || !cached) return false;
   try {
     user32 ??= loadUser32(koffi);
@@ -234,6 +243,7 @@ export function isGameForeground(): boolean {
 /** Copies a small screen rectangle (physical px) as top-down BGRA bytes with one BitBlt from the screen DC: a few
  *  hundred pixels, no window capture. Null when the read fails or it is off-screen. */
 export function grabScreenRegion(x: number, y: number, width: number, height: number): Uint8Array | null {
+  if (process.platform === 'linux') return grabScreenRegionX11(x, y, width, height);
   if (process.platform !== 'win32' || width <= 0 || height <= 0) return null;
   let screenDc: unknown = null,
     memDc: unknown = null,
@@ -273,4 +283,10 @@ export function grabScreenRegion(x: number, y: number, width: number, height: nu
       /* nothing left to free */
     }
   }
+}
+
+/** A `BrowserWindow#getNativeWindowHandle()` buffer as a number: an 8-byte HWND on Windows, a 4-byte X11 window id
+ *  under ozone x11 on Linux. */
+export function nativeHandleId(handle: Buffer): bigint {
+  return handle.length >= 8 ? handle.readBigUInt64LE() : BigInt(handle.readUInt32LE());
 }

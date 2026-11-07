@@ -36,9 +36,11 @@
     "win:timers": "bash scripts/win/timers.sh"
   },
   "dependencies": {
+    "@tesseract.js-data/eng": "^1.0.0",
     "koffi": "^2.9.0",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "@testing-library/react": "^16.3.3",

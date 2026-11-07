@@ -21,6 +21,10 @@ export interface NameReaderOpts {
   /** The helper script as the PowerShell side sees it (a Windows path). */
   script: string;
   powershell?: string;
+  /** Linux: run this program with `args` instead of PowerShell (electron/linux/tess-helper.cjs under Electron's Node). */
+  command?: string;
+  args?: string[];
+  env?: NodeJS.ProcessEnv;
   /** A read that gets no answer in this long fails (the helper is stuck or gone). */
   timeoutMs?: number;
   /** Start ms budget: a helper that is not ready by then counts as a failed start. */
@@ -100,11 +104,13 @@ export function startNameReader(opts: NameReaderOpts): NameReader {
     log('name-reader', 'info', 'reader.start', { attempt: exits + 1 });
     let c: ChildProcessWithoutNullStreams;
     try {
-      c = spawn(
-        opts.powershell ?? 'powershell.exe',
-        ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', opts.script],
-        { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] },
-      );
+      c = opts.command
+        ? spawn(opts.command, opts.args ?? [opts.script], { env: opts.env, stdio: ['pipe', 'pipe', 'pipe'] })
+        : spawn(
+            opts.powershell ?? 'powershell.exe',
+            ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', opts.script],
+            { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] },
+          );
     } catch (e) {
       fail(`spawn: ${(e as Error).message}`);
       return;
