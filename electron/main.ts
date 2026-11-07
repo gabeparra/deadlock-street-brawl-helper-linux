@@ -395,6 +395,16 @@ function overlayOnTop(move = false) {
   if (!alive(overlay) || overlayNotTop) return;
   overlay.setAlwaysOnTop(true, 'screen-saver');
   if (move) overlay.moveTop();
+  overlayToGame();
+}
+
+/** Linux/KWin: the window manager places an on-screen-display window itself when it maps (centred on the active
+ *  monitor), ignoring the bounds set before showing. Put it back over the game after it shows and at every reassert. */
+function overlayToGame() {
+  if (process.platform !== 'linux' || !alive(overlay) || !lastRect || !overlay.isVisible()) return;
+  const want = toDipBounds(lastRect);
+  const b = overlay.getBounds();
+  if (b.x !== want.x || b.y !== want.y || b.width !== want.width || b.height !== want.height) overlay.setBounds(want);
 }
 
 const OVERLAY_TITLE = 'Brawl Overlay';
@@ -685,6 +695,7 @@ function syncOverlay() {
     overlay.setBounds(toDipBounds(rect));
     overlay.showInactive();
     overlayOnTop(true);
+    if (process.platform === 'linux') for (const ms of [50, 250]) setTimeout(overlayToGame, ms); // after the WM placed it
   } else if (!show && overlay.isVisible()) {
     overlay.hide();
   }
