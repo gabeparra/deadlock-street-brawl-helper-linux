@@ -29,6 +29,37 @@ npm run win:dev                            # From WSL: runs the Windows app from
 npm run check                              # Lint, typecheck, formatting and tests
 ```
 
+## Linux 🐧
+
+This fork adds Linux support (tested on KDE Plasma 6 on Wayland, Deadlock through Steam and Proton). Proton runs the game
+as an XWayland window, so the app runs under XWayland too: it finds the game window over X11, reads it with X11 window
+capture, and reads card names with [tesseract.js](https://github.com/naptha/tesseract.js) instead of Windows OCR. The
+scoring and data are upstream's, unchanged. Like the Windows app, it only reads the screen and draws its own window. It
+never touches game files or game memory.
+
+Run it from source (Node 20 or newer):
+
+```bash
+git clone -b linux https://github.com/gabeparra/deadlock-street-brawl-helper
+cd deadlock-street-brawl-helper
+npm ci
+node node_modules/electron/install.js   # only needed if your npm has ignore-scripts on
+npm run build:electron
+scripts/linux/kwin-rule.sh              # KDE only, see below
+scripts/linux/run.sh
+```
+
+- **KDE:** a fullscreen game sits above "always on top" windows, so `scripts/linux/kwin-rule.sh` adds a KWin rule that
+  lifts only the overlay window (title `Brawl Overlay`) above it. `scripts/linux/kwin-rule.sh --remove` takes it out.
+- **Mouse leaves the game on a multi-monitor setup:** that's Proton, not this app. With the game closed, add this to
+  `steamapps/compatdata/1422450/pfx/user.reg` to keep the cursor in the fullscreen game:
+  ```
+  [Software\\Wine\\X11 Driver]
+  "GrabFullscreen"="Y"
+  ```
+- Other desktops (GNOME, Hyprland, Sway) haven't been tested yet. A native Wayland game (`PROTON_ENABLE_WAYLAND=1`)
+  isn't supported, since the app can't see Wayland windows.
+
 ## Features 🔬
 
 - Reads the three cards, the round, the enemy team and the items you've already picked from the screen. Nothing is sent to the game.
