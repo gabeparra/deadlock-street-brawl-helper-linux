@@ -107,7 +107,19 @@ function loadX11() {
   };
 }
 
+function loadXext() {
+  const lib = koffi.load('libXext.so.6');
+  return {
+    XShapeCombineRectangles: lib.func(
+      'void XShapeCombineRectangles(void *dpy, unsigned long w, int kind, int x, int y, void *rects, int n, int op, int ordering)',
+    ),
+  };
+}
+const ShapeInput = 2;
+const ShapeSet = 0;
+
 let x: ReturnType<typeof loadX11> | null = null;
+let xext: ReturnType<typeof loadXext> | null = null;
 let dpy: Ptr = null;
 let root = 0n;
 const atoms = new Map<string, bigint>();
@@ -382,6 +394,21 @@ export function resizeWindowPhysicalX11(handle: Buffer, width: number, height: n
       if (!at) return false;
       x!.XDeleteProperty(dpy, xid, atom('WM_NORMAL_HINTS'));
       x!.XMoveResizeWindow(dpy, xid, at.x, at.y, width, height);
+      return true;
+    }) ?? false
+  );
+}
+
+/** Gives one of our windows an empty input region: the pointer never lands on it anywhere. Electron's
+ *  setIgnoreMouseEvents(true) leaves a 1x1 input rectangle at the window's top-left, and on XWayland that one pixel is
+ *  enough to break a fullscreen game's pointer confinement: the cursor touches the corner, the compositor gives the
+ *  overlay pointer focus, and the mouse can leave the game (KWin, 2026-11-07). */
+export function clearInputShapeX11(handle: Buffer): boolean {
+  const xid = xidOf(handle);
+  return (
+    guarded(() => {
+      xext ??= loadXext();
+      xext.XShapeCombineRectangles(dpy, xid, ShapeInput, 0, 0, null, 0, ShapeSet, 0);
       return true;
     }) ?? false
   );

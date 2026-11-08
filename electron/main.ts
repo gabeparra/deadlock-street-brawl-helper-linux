@@ -16,7 +16,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { writeFileSync, readdirSync, readFileSync } from 'node:fs';
-import { makeUnmanagedX11 } from './linux/x11Window';
+import { clearInputShapeX11, makeUnmanagedX11 } from './linux/x11Window';
 import {
   findGameWindow,
   gameWindowIsBorderless,
@@ -79,6 +79,15 @@ if (process.platform === 'linux' && app.commandLine.getSwitchValue('ozone-platfo
     args: [...process.argv.slice(1), '--ozone-platform=x11'],
   });
   app.exit(0);
+}
+// Linux: with XDG_SESSION_TYPE=wayland (any app started from a Plasma or GNOME session) Chromium's desktop capture asks
+// the xdg-desktop-portal screen-share picker every time, even under XWayland, and WebRTC only creates its X11 window
+// capturer when the session doesn't say wayland. The game is an X11 window: tell this process (and its children) it is
+// on X11, and keep the PipeWire capturer off.
+if (process.platform === 'linux') {
+  if (process.env.XDG_SESSION_TYPE === 'wayland') process.env.XDG_SESSION_TYPE = 'x11';
+  const off = app.commandLine.getSwitchValue('disable-features');
+  app.commandLine.appendSwitch('disable-features', [off, 'WebRtcPipeWireCapturer'].filter(Boolean).join(','));
 }
 // The helper must never compete with the game for CPU: run below normal priority. Child processes (renderers, GPU)
 // inherit this class on Windows, so it is set before any of them start; applied to the existing ones again once up.
@@ -225,9 +234,7 @@ function sendControl(channel: string, ...args: unknown[]) {
 /** Directory of shipped draft screenshots: `public/demo/` in dev (relative to this file, same convention as
  *  the tray icon below), `dist/demo/` inside the asar once packaged (Vite copies `public/` into `dist/`). */
 function demoDir(): string {
-  return app.isPackaged
-    ? path.join(process.resourcesPath, 'app.asar', 'dist', 'demo')
-    : path.join(__dirname, '../public/demo');
+  return app.isPackaged ? path.join(app.getAppPath(), 'dist', 'demo') : path.join(__dirname, '../public/demo');
 }
 const demoImagePath = (name: string) => path.join(demoDir(), `${name}.png`);
 
@@ -453,6 +460,7 @@ function createOverlayWindow() {
   // hover is fed from `overlayCursorTick` instead, only while a draft shows. The harness's synthetic moves reach the page
   // directly (sendInputEvent).
   overlay.setIgnoreMouseEvents(true);
+  if (process.platform === 'linux') clearInputShapeX11(overlay.getNativeWindowHandle()); // not even Electron's 1x1
   overlayIgnoresMouseEvents = true;
   overlayOnTop();
   // Under the harness nobody looks at the overlay (checks read it via capturePage/executeJavaScript), and it
@@ -714,7 +722,10 @@ function syncOverlay() {
     overlay.setBounds(toDipBounds(rect));
     overlay.showInactive();
     overlayOnTop(true);
-    if (process.platform === 'linux') for (const ms of [50, 250]) setTimeout(overlayToGame, ms); // after the WM placed it
+    if (process.platform === 'linux') {
+      clearInputShapeX11(overlay.getNativeWindowHandle()); // in case anything restored Electron's 1x1 input region
+      for (const ms of [50, 250]) setTimeout(overlayToGame, ms); // after the WM placed it
+    }
   } else if (!show && overlay.isVisible()) {
     overlay.hide();
   }
@@ -1456,7 +1467,7 @@ function setupIpc() {
 /** The app logo (public/favicon.svg rendered to PNG): tray and the control window's taskbar entry. */
 function appIconPath(): string {
   return app.isPackaged
-    ? path.join(process.resourcesPath, 'app.asar', 'dist', 'apple-touch-icon.png')
+    ? path.join(app.getAppPath(), 'dist', 'apple-touch-icon.png')
     : path.join(__dirname, '../public/apple-touch-icon.png');
 }
 
@@ -1524,10 +1535,10 @@ app.whenReady().then(() => {
   startRectPolling();
   if (__DEV_TOOLS__) startProcessMetrics();
   setTimeout(lowerAllPriorities, 3000).unref();
-  // Detect now / re-roll reads / capture diagnostics from the control window, so they reach the terminal too.
+  // Detect now / re-roll reads / capture diagnostics / hero reads from the control window, so they reach the terminal too.
   if (alive(control))
     control.webContents.on('console-message', (_e, _level, message) => {
-      if (/"msg":"(detect\.|rerolls\.|capture\.|draft\.read)/.test(message)) console.info(message);
+      if (/"msg":"(detect\.|rerolls\.|capture\.|draft\.read|hero\.)/.test(message)) console.info(message);
     });
   // Dev only: surface the control window's own perf summaries (a production build never emits them).
   if (perf.enabled && alive(control))
