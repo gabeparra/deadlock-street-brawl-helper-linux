@@ -822,6 +822,9 @@ export const HERO_BAR = {
   scales: [0.92, 1, 1.08],
 } as const;
 const MIN_HERO_SCORE = 0.6;
+// The player's own portrait sits on a coloured square tile, which pulls its match down (Abrams scored 0.55 with a 0.10
+// margin on a 2560x1440 bar, 2026-11-08): the own slot accepts a lower score, with the same margin.
+const SELF_MIN_HERO_SCORE = 0.5;
 const HERO_SHORTLIST = 8;
 const HERO_REFINE = 4;
 const MIN_HERO_MARGIN = 0.08;
@@ -830,6 +833,9 @@ interface HeroMatch {
   heroId: number;
   score: number;
   margin: number;
+  /** The best guess when it cleared the margin but not MIN_HERO_SCORE (heroId is then 0): the player's own slot,
+   *  drawn on a square tile, may still use it (SELF_MIN_HERO_SCORE). */
+  below?: number;
 }
 export interface HeroBar {
   left: HeroMatch[];
@@ -919,7 +925,10 @@ function matchHero(img: RGBImage, index: DecodedIndex, cx: number, cy: number, d
     } else if (s > second && index.heroIds[k] !== best.heroId) second = s;
   }
   best.margin = best.score - second;
-  if (best.score < MIN_HERO_SCORE || best.margin < MIN_HERO_MARGIN) best.heroId = 0;
+  if (best.score < MIN_HERO_SCORE || best.margin < MIN_HERO_MARGIN) {
+    if (best.margin >= MIN_HERO_MARGIN && best.heroId) best.below = best.heroId;
+    best.heroId = 0;
+  }
   return best;
 }
 
@@ -1438,6 +1447,11 @@ export function readDraftMeta(
 ): DraftMeta {
   const slot = known ? { left: -1, right: -1 } : readSelfSlot(img);
   const bar = known?.bar ?? (lean ? readLeanBar(img, index, slot) : readHeroBar(img, index));
+  if (!known) {
+    // the own slot's weaker match counts (SELF_MIN_HERO_SCORE), in the bar too so enemiesFrom finds the player's side
+    const own = slot.left >= 0 ? bar.left[slot.left] : slot.right >= 0 ? bar.right[slot.right] : undefined;
+    if (own && !own.heroId && own.below && own.score >= SELF_MIN_HERO_SCORE) own.heroId = own.below;
+  }
   return {
     round: readDigit(img, LABELS.round, lightText, ROUND_DIGITS, ROUND_LOOSE),
     choice: readDigit(img, LABELS.choice, magentaText, CHOICE_DIGITS),
