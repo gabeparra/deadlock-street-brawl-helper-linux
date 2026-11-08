@@ -52,6 +52,10 @@ npm run build:electron
 scripts/linux/run.sh
 ```
 
+`scripts/linux/install.sh` (or `scripts/linux/install.sh path/to.AppImage`) adds an app-menu entry and desktop icon, and
+a systemd user unit that starts the overlay when Deadlock starts and stops it when the game exits (it watches Steam's
+`logs/gameprocess_log.txt`, flatpak or native Steam). `--uninstall` removes it all.
+
 `npm run dist` builds the AppImage into `release/`. `scripts/linux/e2e.sh` runs upstream's Electron test harness against
 test mode's dummy window.
 
