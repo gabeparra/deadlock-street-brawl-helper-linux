@@ -16,7 +16,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { writeFileSync, readdirSync, readFileSync } from 'node:fs';
-import { clearInputShapeX11, makeUnmanagedX11 } from './linux/x11Window';
+import { clearInputShapeX11, gameWindowIdX11, makeUnmanagedX11 } from './linux/x11Window';
 import {
   findGameWindow,
   gameWindowIsBorderless,
@@ -1317,7 +1317,10 @@ function setupDisplayMediaHandler() {
           Boolean,
         ),
       );
-      const match = sources.find((s) => !ownIds.has(s.id) && isGameWindowTitle(s.name, GAME_WINDOW_TITLE));
+      let match = sources.find((s) => !ownIds.has(s.id) && isGameWindowTitle(s.name, GAME_WINDOW_TITLE));
+      // Linux: the game window found over X11 may not be titled "Deadlock" (Wine's virtual desktop): pick it by id.
+      const xid = process.platform === 'linux' && !match ? gameWindowIdX11() : null;
+      if (xid !== null) match = sources.find((s) => s.id.startsWith(`window:${xid}:`));
       log('electron-main', match ? 'info' : 'warn', match ? 'capture.chosen' : 'capture.denied', { name: match?.name });
       if (!match) {
         captureFailed = true;

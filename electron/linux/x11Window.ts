@@ -242,6 +242,20 @@ function rectOf(win: bigint): Rect | null {
   return { x: dx[0]!, y: dy[0]!, width: w[0]!, height: h[0]! };
 }
 
+function wmClass(win: bigint): string[] {
+  const p = prop(win, 'WM_CLASS');
+  return p ? p.bytes.toString('latin1').split('\0').filter(Boolean) : [];
+}
+
+// Wine's virtual desktop (a fix for the cursor leaving fullscreen games on multi-monitor XWayland, see PLAN/README):
+// the game then draws inside one X window titled "Wine Desktop" (or "<name> - Wine desktop"), its own "Deadlock" window
+// a child of it, so the desktop window is the one to track, capture and cover. Proton
+// tags the windows of a game with the class steam_app_<appid>, so only Deadlock's own Wine desktop is accepted.
+const DEADLOCK_CLASS = 'steam_app_1422450';
+function isGameWineDesktop(win: bigint): boolean {
+  return /^(.+ - )?wine desktop$/i.test(title(win).trim()) && wmClass(win).includes(DEADLOCK_CLASS);
+}
+
 function isHidden(win: bigint): boolean {
   return longs(prop(win, '_NET_WM_STATE', XA_ATOM)).includes(atom('_NET_WM_STATE_HIDDEN'));
 }
@@ -261,14 +275,14 @@ export function findGameWindowX11(
       cached.title === wanted &&
       !exclude?.has(cached.xid) &&
       (only === undefined || cached.xid === only) &&
-      isTitle(title(cached.xid), wanted)
+      (isTitle(title(cached.xid), wanted) || (only === undefined && isGameWineDesktop(cached.xid)))
     )
       xid = cached.xid;
     if (xid === null) {
       for (const w of longs(prop(root, '_NET_CLIENT_LIST', XA_WINDOW))) {
         if (exclude?.has(w)) continue;
         if (only !== undefined && w !== only) continue;
-        if (isTitle(title(w), wanted)) {
+        if (isTitle(title(w), wanted) || (only === undefined && isGameWineDesktop(w))) {
           xid = w;
           break;
         }
@@ -286,6 +300,12 @@ export function findGameWindowX11(
     cached = { title: wanted, xid, rect };
     return isHidden(xid) ? null : rect;
   });
+}
+
+/** The X window id of the game window found last (null before one is found): Chromium names window capture sources
+ *  `window:<xid>:0`, so capture can pick the game by id when its title isn't "Deadlock" (Wine desktop). */
+export function gameWindowIdX11(): bigint | null {
+  return cached?.xid ?? null;
 }
 
 export function isGameForegroundX11(): boolean {
