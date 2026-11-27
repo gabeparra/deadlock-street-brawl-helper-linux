@@ -1,79 +1,61 @@
-# Deadlock Street Brawl Helper 🃏
+# Deadlock Street Brawl Helper (Linux / Arch)
 
-<p align="center">
-  <img alt="One real Street Brawl draft at normal speed: it shows the Reading sign, then score plates on the cards with the advised one marked in teal" src="docs/brawl-overlay.gif">
-</p>
+> A draft advisor for [Deadlock](https://store.steampowered.com/app/1422450/Deadlock/)'s Street Brawl mode: it reads the draft screen, ranks the three cards you're offered and says whether a re-roll is worth it.
 
-A draft advisor for [Deadlock](https://store.steampowered.com/app/1422450/Deadlock/)'s Street Brawl mode. It reads the draft screen while you play, ranks the three cards you're offered, and says whether the set is worth a re-roll. The advice is drawn over the draft screen. Scores are built from Street Brawl matches since the 2026-10-30 patch from [deadlock-api.com](https://deadlock-api.com), for all 44 heroes.
+**Status:** `Maintained` - this public repo covers the working Arch Linux release only; further development is private.
 
-## Quickstart 🚀
+![Status: Maintained](https://img.shields.io/badge/status-Maintained-blue)
 
-Requires Windows. Get the app from the [latest release](https://github.com/Gidntsquia/deadlock-street-brawl-helper/releases/latest): a portable `.exe` and an installer.
+## Quickstart
 
-1. In Deadlock's Video settings, set Display Mode to Borderless Windowed.
-2. Run the app. It finds the Deadlock window on its own.
-3. Play a Street Brawl draft. The advice shows up over the draft screen.
+### Prerequisites
 
-IMPORTANT: the files aren't code-signed, so Windows SmartScreen will warn you. Click More info, then Run anyway.
+- Arch Linux, with Deadlock running through Steam and Proton (tested on KDE Plasma 6 on Wayland)
+- Node.js 22.22.2 or newer on the 22 line, or 24.15 or newer, plus npm and git
+- FUSE 2 if you run it as an AppImage: `sudo pacman -S fuse2`
 
-Press F8 to read the draft right away if the app hasn't picked it up. With no game running, pick First-run check in the tray menu and press Show me to try the overlay on a real draft screenshot. The debug panel (Ctrl+Shift+D) is in development and release-candidate builds only.
+### Setup & Run
 
-To work on it (needs [Node.js](https://nodejs.org) 20 or newer):
-
-```
-npm install
-npm run dev                                # Browser version, for development only
-npm run brawl -- --hero 1 --round 2 --set "Improved Spirit,Enchanter's Emblem,Swift Striker"   # Advice without the screen reader
-npm run fetch-data -- --since 2026-10-30   # Refreshes the Street Brawl snapshot (~1400 requests, ~9 min)
-npm run win:dev                            # From WSL: runs the Windows app from a synced copy
-npm run check                              # Lint, typecheck, formatting and tests
-```
-
-## Linux 🐧
-
-This fork adds Linux support (tested on KDE Plasma 6 on Wayland, Deadlock through Steam and Proton). Proton runs the game
-as an XWayland window, so the app runs under XWayland too: it finds the game window over X11, reads it with X11 window
-capture, and reads card names with [tesseract.js](https://github.com/naptha/tesseract.js) instead of Windows OCR. The
-scoring and data are upstream's, unchanged. Like the Windows app, it only reads the screen and draws its own window. It
-never touches game files or game memory, and it makes no network requests.
-
-**AppImage** (any x86_64 distro): download `deadlock-street-brawl-helper-<version>-x86_64.AppImage` from Releases,
-`chmod +x` it and run it. AppImages need FUSE 2 (`sudo apt install libfuse2t64` on Ubuntu 24.04 and newer,
-`sudo pacman -S fuse2` on Arch); without it, run it with `--appimage-extract-and-run`.
-
-**From source** (Node 20 or newer):
+In Deadlock's Video settings, set Display Mode to Borderless Windowed. Then:
 
 ```bash
 git clone https://github.com/gabeparra/deadlock-street-brawl-helper-linux
 cd deadlock-street-brawl-helper-linux
-npm ci
-node node_modules/electron/install.js   # only needed if your npm has ignore-scripts on
-npm run build:electron
-scripts/linux/run.sh
+npm ci                   # install
+npm run build:electron   # build
+scripts/linux/run.sh     # run
+npm run check            # lint, typecheck, formatting and tests
 ```
 
-`scripts/linux/install.sh` (or `scripts/linux/install.sh path/to.AppImage`) adds an app-menu entry and desktop icon, and
-a systemd user unit that starts the overlay when Deadlock starts and stops it when the game exits (it watches Steam's
-`logs/gameprocess_log.txt`, flatpak or native Steam). `--uninstall` removes it all.
+Play a Street Brawl draft and the advice shows up over the draft screen. Press F8 to read the draft right away if the app hasn't picked it up. With no game running, pick First-run check in the tray menu to try the overlay on a real draft screenshot.
 
-`npm run dist` builds the AppImage into `release/`. `scripts/linux/e2e.sh` runs upstream's Electron test harness against
-test mode's dummy window.
+### Optional
 
-- **Desktops:** the overlay is an override-redirect X11 window, so it sits above the fullscreen game without any window
-  manager setup. If your setup needs it managed instead, start with `BRAWL_X11_MANAGED=1`; on KDE that also needs
-  `scripts/linux/kwin-rule.sh`, which lifts the overlay above fullscreen windows (`--remove` takes it out again).
-- The app always runs under XWayland. If it starts without `--ozone-platform=x11` (or with
-  `ELECTRON_OZONE_PLATFORM_HINT=wayland` set), it restarts itself once with it.
-- **Mouse leaves the game on a multi-monitor setup:** that's Proton, not this app. With the game closed, add this to
-  `steamapps/compatdata/1422450/pfx/user.reg` to keep the cursor in the fullscreen game:
+- **AppImage:** `npm run dist` builds one into `release/`. Without FUSE 2, run it with `--appimage-extract-and-run`.
+- **Start with the game:** `scripts/linux/install.sh` (or `scripts/linux/install.sh path/to.AppImage`) adds an app-menu entry, a desktop icon and a systemd user unit that starts the overlay when Deadlock starts and stops it when the game exits (it watches Steam's `logs/gameprocess_log.txt`, flatpak or native Steam). `--uninstall` removes it all.
+- **End-to-end test:** `scripts/linux/e2e.sh` runs upstream's Electron harness against test mode's dummy window. It needs a desktop session, and its `platform` check expects Windows, so that one fails on Linux.
+
+### Troubleshooting
+
+- **Overlay:** it's an override-redirect X11 window, so it sits above the fullscreen game without any window manager setup. If your setup needs it managed instead, start with `BRAWL_X11_MANAGED=1`. On KDE that also needs `scripts/linux/kwin-rule.sh` (`--remove` takes it out again).
+- **XWayland:** the app always runs under XWayland. If it starts without `--ozone-platform=x11` (or with `ELECTRON_OZONE_PLATFORM_HINT=wayland` set), it restarts itself once with it.
+- **Native Wayland:** a native Wayland game (`PROTON_ENABLE_WAYLAND=1`) isn't supported, since the app can't see Wayland windows.
+- **Mouse leaves the game on a multi-monitor setup:** that's Proton, not this app. With the game closed, add this to `steamapps/compatdata/1422450/pfx/user.reg`:
   ```
   [Software\\Wine\\X11 Driver]
   "GrabFullscreen"="Y"
   ```
-- Tested on KDE Plasma 6. GNOME, Hyprland and Sway should work the same way (XWayland), but haven't been tried yet. A
-  native Wayland game (`PROTON_ENABLE_WAYLAND=1`) isn't supported, since the app can't see Wayland windows.
 
-## Features 🔬
+## Stack & Architecture
+
+- **Stack:** TypeScript, React, Vite, Electron, [tesseract.js](https://github.com/naptha/tesseract.js) for reading card names, and [koffi](https://koffi.dev) for the X11 calls. Tests run on Vitest.
+- **Layout:** `electron/` is the app shell, overlay window and screen capture (X11 code in `electron/linux/`), `src/` is the UI and the advisor, `public/data/` is the match data snapshot and `scripts/` holds the data, test and Linux helper tools.
+- **How it works:** Proton runs the game as an XWayland window, so the app runs under XWayland too. It finds the game window over X11, captures it, reads the cards and draws its advice in its own window. It never touches game files or game memory, and it makes no network requests while running.
+- **Data:** scores are built from Street Brawl matches since the 2026-10-30 patch from [deadlock-api.com](https://deadlock-api.com), for all 44 heroes.
+- **Upstream:** a Linux fork of [Gidntsquia/deadlock-street-brawl-helper](https://github.com/Gidntsquia/deadlock-street-brawl-helper). Its [wiki](https://github.com/Gidntsquia/deadlock-street-brawl-helper/wiki) explains how the advisor works (the Windows pages don't apply here). For the Windows app, use upstream.
+- **Scope:** other distros, desktops and new features aren't tracked here. The default branch is `linux`, so it stays apart from upstream's `main`.
+
+### Features
 
 - Reads the three cards, the round, the enemy team and the items you've already picked from the screen. Nothing is sent to the game.
 - Ranks the cards for your hero using pick rate, win rate and how well each item scales that hero's abilities, and shifts the ranking toward items that do well against the enemy heroes.
@@ -85,21 +67,12 @@ test mode's dummy window.
 - Tells you to switch to Borderless Windowed if the capture has been black for 10 seconds.
 - Has a test mode that opens a dummy Deadlock window with a real draft screenshot.
 
-## Documentation 📚
+## Screenshots / Demo
 
-More details in the
-[wiki](https://github.com/Gidntsquia/deadlock-street-brawl-helper/wiki):
+<p align="center">
+  <img alt="One real Street Brawl draft at normal speed: it shows the Reading sign, then score plates on the cards with the advised one marked in teal" src="docs/brawl-overlay.gif">
+</p>
 
-- [Street Brawl Advisor](https://github.com/Gidntsquia/deadlock-street-brawl-helper/wiki/Street-Brawl-Advisor) — the mode's rules, card scoring, re-roll maths
-- [Screen Reader](https://github.com/Gidntsquia/deadlock-street-brawl-helper/wiki/Screen-Reader) — how cards, tiers, labels, your picks and your hero are recognised
-- [Name Reader](https://github.com/Gidntsquia/deadlock-street-brawl-helper/wiki/Name-Reader) — how card names are read with Windows OCR
-- [Overlay](https://github.com/Gidntsquia/deadlock-street-brawl-helper/wiki/Overlay) — screen capture and the always-on-top window
-- [Windows App](https://github.com/Gidntsquia/deadlock-street-brawl-helper/wiki/Windows-App) — the packaged app, first run, test mode, developing from WSL
-- [Tier List](https://github.com/Gidntsquia/deadlock-street-brawl-helper/wiki/Tier-List) — how the S/A/B/C grades are worked out
-- [Data Pipeline](https://github.com/Gidntsquia/deadlock-street-brawl-helper/wiki/Data-Pipeline) — what fetch-data downloads and the data window
-- [Development](https://github.com/Gidntsquia/deadlock-street-brawl-helper/wiki/Development) — code layout, scripts, checks
+## License
 
-## License 📄
-
-[MIT](LICENSE). Match data and item art come from [deadlock-api.com](https://deadlock-api.com);
-Deadlock is Valve's.
+MIT - see [LICENSE](./LICENSE). The license and copyright are upstream's. Match data and item art come from [deadlock-api.com](https://deadlock-api.com); Deadlock is Valve's.
